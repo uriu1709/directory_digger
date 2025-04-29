@@ -114,7 +114,7 @@ class DirectoryDiggerApp(QMainWindow):
         max_pages_label = QLabel("最大ページ数:")
         self.max_pages_input = QSpinBox()
         self.max_pages_input.setRange(0, 100000)
-        self.max_pages_input.setValue(1000)
+        self.max_pages_input.setValue(0)  # 0を設定して無制限にする
         self.max_pages_input.setSpecialValueText("無制限")
         params_layout.addWidget(max_pages_label)
         params_layout.addWidget(self.max_pages_input)
