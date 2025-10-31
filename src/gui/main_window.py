@@ -3,9 +3,9 @@ import os
 import threading
 import logging
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QPushButton, QLabel, QSpinBox, QDoubleSpinBox,
-    QTextEdit, QProgressBar, QFileDialog, QMessageBox, QGroupBox
+    QTextEdit, QProgressBar, QFileDialog, QMessageBox, QGroupBox, QCheckBox
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QObject, QUrl, QThread
 
@@ -13,7 +13,13 @@ from PyQt6.QtCore import Qt, pyqtSignal, QObject, QUrl, QThread
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from crawler.crawler import WebCrawler
-from utils.export import export_pages_to_csv, export_links_to_csv
+from utils.export import (
+    export_pages_to_csv,
+    export_links_to_csv,
+    export_hierarchy_comparison_to_csv,
+    export_hierarchy_tree_to_json,
+    export_hierarchy_tree_to_text
+)
 
 
 class CrawlerSignals(QObject):
@@ -156,8 +162,31 @@ class DirectoryDiggerApp(QMainWindow):
         self.export_button.setEnabled(False)
         self.export_button.clicked.connect(self.export_results)
         buttons_layout.addWidget(self.export_button)
-        
+
         main_layout.addLayout(buttons_layout)
+
+        # 階層構造エクスポートオプション
+        hierarchy_group = QGroupBox("階層構造エクスポートオプション")
+        hierarchy_layout = QVBoxLayout()
+
+        self.export_hierarchy_comparison = QCheckBox("階層比較CSV（URL階層 vs パンくず階層）")
+        self.export_hierarchy_comparison.setChecked(True)
+        hierarchy_layout.addWidget(self.export_hierarchy_comparison)
+
+        self.export_url_tree = QCheckBox("URL階層ツリー（テキスト形式）")
+        self.export_url_tree.setChecked(True)
+        hierarchy_layout.addWidget(self.export_url_tree)
+
+        self.export_breadcrumb_tree = QCheckBox("パンくず階層ツリー（テキスト形式）")
+        self.export_breadcrumb_tree.setChecked(False)
+        hierarchy_layout.addWidget(self.export_breadcrumb_tree)
+
+        self.export_json = QCheckBox("JSON形式でもエクスポート")
+        self.export_json.setChecked(False)
+        hierarchy_layout.addWidget(self.export_json)
+
+        hierarchy_group.setLayout(hierarchy_layout)
+        main_layout.addWidget(hierarchy_group)
         
         # ステータスとプログレスバー
         status_layout = QHBoxLayout()
@@ -258,12 +287,22 @@ class DirectoryDiggerApp(QMainWindow):
         self.pages = pages
         self.external_links = external_links
         self.broken_links = broken_links
-        
+
         # 結果の統計情報をログに表示
         self.log(f"クロール完了: {len(pages)}ページを探索しました")
         self.log(f"外部リンク: {len(external_links)}件")
         self.log(f"リンク切れ: {len(broken_links)}件")
-        
+
+        # 階層情報の統計
+        pages_with_breadcrumb = sum(1 for p in pages if p.get('breadcrumb'))
+        if pages_with_breadcrumb > 0:
+            self.log(f"パンくずリストを持つページ: {pages_with_breadcrumb}件 ({pages_with_breadcrumb*100//len(pages)}%)")
+
+            # 深さの統計
+            max_url_depth = max((p.get('url_depth', 0) for p in pages), default=0)
+            max_breadcrumb_depth = max((p.get('breadcrumb_depth', 0) for p in pages), default=0)
+            self.log(f"最大URL階層: {max_url_depth}, 最大パンくず階層: {max_breadcrumb_depth}")
+
         # UIの状態更新
         self.start_button.setEnabled(True)
         self.stop_button.setEnabled(False)
@@ -285,41 +324,78 @@ class DirectoryDiggerApp(QMainWindow):
         if not self.pages and not self.external_links and not self.broken_links:
             QMessageBox.warning(self, "警告", "エクスポートするデータがありません")
             return
-            
+
         # 出力ディレクトリを選択
         output_dir = QFileDialog.getExistingDirectory(
             self, "保存先ディレクトリを選択", os.path.expanduser("~")
         )
-        
+
         if not output_dir:
             return
-            
+
         try:
             # タイムスタンプを作成（ファイル名の一貫性のため）
             from datetime import datetime
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            
+
             # 各種CSVをエクスポート
             results = []
-            
+
             if self.pages:
                 filename = f"pages_{timestamp}.csv"
                 path = export_pages_to_csv(self.pages, output_dir, filename)
                 if path:
                     results.append(f"ページ情報: {path}")
-            
+
             if self.external_links:
                 filename = f"external_links_{timestamp}.csv"
                 path = export_links_to_csv(self.external_links, output_dir, filename, 'external')
                 if path:
                     results.append(f"外部リンク: {path}")
-            
+
             if self.broken_links:
                 filename = f"broken_links_{timestamp}.csv"
                 path = export_links_to_csv(self.broken_links, output_dir, filename, 'broken')
                 if path:
                     results.append(f"リンク切れ: {path}")
-            
+
+            # 階層構造のエクスポート
+            if self.pages:
+                # 階層比較CSV
+                if self.export_hierarchy_comparison.isChecked():
+                    filename = f"hierarchy_comparison_{timestamp}.csv"
+                    path = export_hierarchy_comparison_to_csv(self.pages, output_dir, filename)
+                    if path:
+                        results.append(f"階層比較: {path}")
+
+                # URL階層ツリー
+                if self.export_url_tree.isChecked():
+                    filename = f"hierarchy_tree_url_{timestamp}.txt"
+                    path = export_hierarchy_tree_to_text(self.pages, output_dir, filename, 'url')
+                    if path:
+                        results.append(f"URL階層ツリー: {path}")
+
+                    # JSON形式でもエクスポート
+                    if self.export_json.isChecked():
+                        filename = f"hierarchy_tree_url_{timestamp}.json"
+                        path = export_hierarchy_tree_to_json(self.pages, output_dir, filename, 'url')
+                        if path:
+                            results.append(f"URL階層ツリー(JSON): {path}")
+
+                # パンくず階層ツリー
+                if self.export_breadcrumb_tree.isChecked():
+                    filename = f"hierarchy_tree_breadcrumb_{timestamp}.txt"
+                    path = export_hierarchy_tree_to_text(self.pages, output_dir, filename, 'breadcrumb')
+                    if path:
+                        results.append(f"パンくず階層ツリー: {path}")
+
+                    # JSON形式でもエクスポート
+                    if self.export_json.isChecked():
+                        filename = f"hierarchy_tree_breadcrumb_{timestamp}.json"
+                        path = export_hierarchy_tree_to_json(self.pages, output_dir, filename, 'breadcrumb')
+                        if path:
+                            results.append(f"パンくず階層ツリー(JSON): {path}")
+
             # 結果を表示
             if results:
                 message = "以下のファイルを保存しました：\n" + "\n".join(results)
@@ -327,7 +403,7 @@ class DirectoryDiggerApp(QMainWindow):
                 self.log(message)
             else:
                 QMessageBox.warning(self, "エクスポート失敗", "エクスポートに失敗しました")
-                
+
         except Exception as e:
             self.log(f"エクスポート中にエラーが発生しました: {str(e)}")
             QMessageBox.critical(self, "エラー", f"エクスポート中にエラーが発生しました: {str(e)}")

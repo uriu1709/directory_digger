@@ -133,15 +133,25 @@ class WebCrawler:
             if meta_description and meta_description.get("content"):
                 description = meta_description["content"]
             
+            # パンくずリストを抽出
+            breadcrumb = self._extract_breadcrumb(soup)
+
+            # URL階層を計算
+            url_hierarchy = self._calculate_url_hierarchy(url)
+
             # ページ情報を記録
             page_info = {
                 "url": url,
                 "title": title,
                 "keywords": keywords,
                 "description": description,
+                "breadcrumb": breadcrumb,
+                "breadcrumb_depth": len(breadcrumb) if breadcrumb else 0,
+                "url_hierarchy": url_hierarchy,
+                "url_depth": len(url_hierarchy),
                 "notes": ""
             }
-            
+
             with self.lock:
                 self.pages.append(page_info)
             
@@ -189,3 +199,90 @@ class WebCrawler:
                 # 外部リンクの場合は記録
                 with self.lock:
                     self.external_links.append((absolute_url, source_url))
+
+    def _extract_breadcrumb(self, soup):
+        """
+        ページからパンくずリストを抽出する
+
+        Parameters:
+        -----------
+        soup : BeautifulSoup
+            解析するページのBeautifulSoupオブジェクト
+
+        Returns:
+        --------
+        list or None
+            パンくずリストの項目リスト、見つからない場合はNone
+        """
+        breadcrumb_items = []
+
+        # 方法1: aria-label="breadcrumb" を持つnav要素を探す
+        breadcrumb_nav = soup.find('nav', attrs={'aria-label': 'breadcrumb'})
+        if not breadcrumb_nav:
+            breadcrumb_nav = soup.find('nav', class_=lambda x: x and 'breadcrumb' in x.lower())
+
+        if breadcrumb_nav:
+            # ol/ul内のリンクやテキストを取得
+            items = breadcrumb_nav.find_all(['a', 'span', 'li'])
+            for item in items:
+                text = item.get_text(strip=True)
+                if text and text not in ['>', '/', '»', '›']:  # セパレーターを除外
+                    breadcrumb_items.append(text)
+
+        # 方法2: class="breadcrumb" を持つol/ul要素を探す
+        if not breadcrumb_items:
+            breadcrumb_list = soup.find(['ol', 'ul'], class_=lambda x: x and 'breadcrumb' in x.lower())
+            if breadcrumb_list:
+                items = breadcrumb_list.find_all('li')
+                for item in items:
+                    # リンクがあればリンクテキスト、なければli自体のテキスト
+                    link = item.find('a')
+                    text = link.get_text(strip=True) if link else item.get_text(strip=True)
+                    if text and text not in ['>', '/', '»', '›']:
+                        breadcrumb_items.append(text)
+
+        # 方法3: Schema.org BreadcrumbList を探す
+        if not breadcrumb_items:
+            breadcrumb_schema = soup.find_all(attrs={'itemtype': 'http://schema.org/BreadcrumbList'})
+            if breadcrumb_schema:
+                for schema in breadcrumb_schema:
+                    items = schema.find_all(attrs={'itemprop': 'name'})
+                    for item in items:
+                        text = item.get_text(strip=True)
+                        if text:
+                            breadcrumb_items.append(text)
+
+        return breadcrumb_items if breadcrumb_items else None
+
+    def _calculate_url_hierarchy(self, url):
+        """
+        URLから階層構造を計算する
+
+        Parameters:
+        -----------
+        url : str
+            解析するURL
+
+        Returns:
+        --------
+        list
+            URL階層のリスト（例: ['/', 'products', 'electronics', 'phones']）
+        """
+        parsed = urlparse(url)
+        path = parsed.path
+
+        # パスを分割して階層を取得
+        if path == '/' or path == '':
+            return ['/']
+
+        # 末尾のスラッシュを除去
+        path = path.rstrip('/')
+
+        # スラッシュで分割
+        parts = path.split('/')
+
+        # 空の要素を除外し、ルートを追加
+        hierarchy = ['/']
+        hierarchy.extend([part for part in parts if part])
+
+        return hierarchy
