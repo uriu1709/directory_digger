@@ -222,12 +222,22 @@ class WebCrawler:
             breadcrumb_nav = soup.find('nav', class_=lambda x: x and 'breadcrumb' in x.lower())
 
         if breadcrumb_nav:
-            # ol/ul内のリンクやテキストを取得
-            items = breadcrumb_nav.find_all(['a', 'span', 'li'])
-            for item in items:
-                text = item.get_text(strip=True)
-                if text and text not in ['>', '/', '»', '›']:  # セパレーターを除外
-                    breadcrumb_items.append(text)
+            # ol/ul内のli要素を取得（li内のリンクやテキストを処理）
+            items = breadcrumb_nav.find_all('li')
+            if items:
+                for item in items:
+                    # リンクがあればリンクテキスト、なければli自体のテキスト
+                    link = item.find('a')
+                    text = link.get_text(strip=True) if link else item.get_text(strip=True)
+                    if text and text not in ['>', '/', '»', '›']:  # セパレーターを除外
+                        breadcrumb_items.append(text)
+            else:
+                # li要素がない場合は、a/span要素を直接取得
+                links = breadcrumb_nav.find_all(['a', 'span'])
+                for link in links:
+                    text = link.get_text(strip=True)
+                    if text and text not in ['>', '/', '»', '›']:
+                        breadcrumb_items.append(text)
 
         # 方法2: class="breadcrumb" を持つol/ul要素を探す
         if not breadcrumb_items:
