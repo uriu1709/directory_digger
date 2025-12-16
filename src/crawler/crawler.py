@@ -216,10 +216,20 @@ class WebCrawler:
         """
         breadcrumb_items = []
 
+        # クラス属性に 'breadcrumb' が含まれるかをチェックするヘルパー関数
+        # class属性は文字列またはリストの場合がある
+        def has_breadcrumb_class(class_attr):
+            if not class_attr:
+                return False
+            if isinstance(class_attr, str):
+                return 'breadcrumb' in class_attr.lower()
+            # リストの場合は各要素をチェック
+            return any('breadcrumb' in c.lower() for c in class_attr)
+
         # 方法1: aria-label="breadcrumb" を持つnav要素を探す
         breadcrumb_nav = soup.find('nav', attrs={'aria-label': 'breadcrumb'})
         if not breadcrumb_nav:
-            breadcrumb_nav = soup.find('nav', class_=lambda x: x and 'breadcrumb' in x.lower())
+            breadcrumb_nav = soup.find('nav', class_=has_breadcrumb_class)
 
         if breadcrumb_nav:
             # ol/ul内のli要素を取得（li内のリンクやテキストを処理）
@@ -241,7 +251,7 @@ class WebCrawler:
 
         # 方法2: class="breadcrumb" を持つol/ul要素を探す
         if not breadcrumb_items:
-            breadcrumb_list = soup.find(['ol', 'ul'], class_=lambda x: x and 'breadcrumb' in x.lower())
+            breadcrumb_list = soup.find(['ol', 'ul'], class_=has_breadcrumb_class)
             if breadcrumb_list:
                 items = breadcrumb_list.find_all('li')
                 for item in items:
