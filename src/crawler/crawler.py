@@ -261,9 +261,15 @@ class WebCrawler:
                     if text and text not in ['>', '/', '»', '›']:
                         breadcrumb_items.append(text)
 
-        # 方法3: Schema.org BreadcrumbList を探す
+        # 方法3: Schema.org BreadcrumbList を探す (http/https両対応)
         if not breadcrumb_items:
-            breadcrumb_schema = soup.find_all(attrs={'itemtype': 'http://schema.org/BreadcrumbList'})
+            # http と https の両方のスキームに対応
+            breadcrumb_schema = soup.find_all(
+                attrs={'itemtype': lambda x: x in [
+                    'http://schema.org/BreadcrumbList',
+                    'https://schema.org/BreadcrumbList'
+                ]}
+            )
             if breadcrumb_schema:
                 for schema in breadcrumb_schema:
                     items = schema.find_all(attrs={'itemprop': 'name'})
