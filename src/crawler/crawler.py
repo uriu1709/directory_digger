@@ -5,7 +5,7 @@ import time
 import logging
 import validators
 from concurrent.futures import ThreadPoolExecutor
-from queue import Queue
+from queue import Queue, Empty
 import threading
 
 class WebCrawler:
@@ -66,7 +66,7 @@ class WebCrawler:
                 # キューから次のURLを取得
                 try:
                     current_url, source_url = self.url_queue.get(timeout=5)
-                except:
+                except Empty:
                     # キューが空で、すべてのタスクが終了したら終了
                     if all(future.done() for future in futures):
                         break
